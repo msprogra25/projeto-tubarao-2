@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configurações da Empresa — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .preview-logo {
+    width: 140px; height: 140px; border-radius: 16px; object-fit: contain;
+    border: 1px solid var(--borda); margin-bottom: 1rem;
+    background-image:
+      linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    display: flex; align-items: center; justify-content: center; font-size: 2rem;
+  }
+  .acoes-logo { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .acoes-logo button { flex: 1; min-width: 140px; padding: 0.55rem 0.8rem; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Configurações da Empresa</span></div>
+    </div>
+
+  <div class="container">
+    <div class="card" style="max-width:480px; margin:0 auto;">
+      <img id="preview" class="preview-logo" style="display:none;">
+      <div id="preview-vazio" class="preview-logo">🏢</div>
+
+      <form id="form-empresa">
+        <div class="form-linha"><label>Nome da empresa</label><input name="nome" id="input-nome" required></div>
+        <div class="form-linha"><label>Logo (PNG ou JPG)</label><input type="file" name="logo" id="input-logo" accept="image/png,image/jpeg"></div>
+        <div class="acoes-logo">
+          <button type="button" class="btn btn-secundario" id="btn-remover-fundo" onclick="removerFundoLogo()">🪄 Remover fundo da logo</button>
+          <button type="button" class="btn btn-secundario" onclick="visualizarPdfExemplo()">👁️ Visualizar PDF de exemplo</button>
+        </div>
+        <button type="submit" class="btn btn-primario" style="width:100%;">Salvar Alterações</button>
+      </form>
+      <p style="color:var(--texto-suave); font-size:0.85rem; margin-top:0.8rem;">A identidade visual é aplicada automaticamente em cabeçalhos, PDFs e notas geradas pelo sistema.</p>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+
+    async function carregar() {
+      const empresa = await api('/empresa');
+      document.getElementById('input-nome').value = empresa.nome;
+      if (empresa.logo_path) {
+        document.getElementById('preview').src = empresa.logo_path;
+        document.getElementById('preview').style.display = 'block';
+        document.getElementById('preview-vazio').style.display = 'none';
+      }
+    }
+
+    document.getElementById('input-logo').addEventListener('change', (e) => {
+      const arquivo = e.target.files[0];
+      if (!arquivo) return;
+      const url = URL.createObjectURL(arquivo);
+      document.getElementById('preview').src = url;
+      document.getElementById('preview').style.display = 'block';
+      document.getElementById('preview-vazio').style.display = 'none';
+    });
+
+    function arquivoAtualDaLogo() {
+      const input = document.getElementById('input-logo');
+      return input.files[0] || null;
+    }
+
+    function substituirArquivoLogo(blob, nomeArquivo) {
+      const novoArquivo = new File([blob], nomeArquivo, { type: 'image/png' });
+      const dt = new DataTransfer();
+      dt.items.add(novoArquivo);
+      document.getElementById('input-logo').files = dt.files;
+
+      const url = URL.createObjectURL(blob);
+      document.getElementById('preview').src = url;
+      document.getElementById('preview').style.display = 'block';
+      document.getElementById('preview-vazio').style.display = 'none';
+    }
+
+    async function removerFundoLogo() {
+      const arquivo = arquivoAtualDaLogo();
+      if (!arquivo) { mostrarToast('Selecione uma imagem primeiro', 'erro'); return; }
+
+      const btn = document.getElementById('btn-remover-fundo');
+      btn.disabled = true; btn.textContent = 'Removendo fundo...';
+      try {
+        const fd = new FormData();
+        fd.append('imagem', arquivo);
+        const resposta = await fetch('/api/empresa/remover-fundo-logo', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: fd,
+        });
+        if (!resposta.ok) {
+          const erro = await resposta.json().catch(() => ({}));
+          throw new Error(erro.erro || 'Falha ao remover o fundo');
+        }
+        const blob = await resposta.blob();
+        substituirArquivoLogo(blob, 'logo-sem-fundo.png');
+        mostrarToast('Fundo removido! Confira o preview (fundo quadriculado = transparência).');
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      } finally {
+        btn.disabled = false; btn.textContent = '🪄 Remover fundo da logo';
+      }
+    }
+
+    async function visualizarPdfExemplo() {
+      const nome = document.getElementById('input-nome').value || 'Minha Empresa';
+      const arquivo = arquivoAtualDaLogo();
+      try {
+        mostrarToast('Gerando PDF de exemplo...');
+        const fd = new FormData();
+        fd.append('nome', nome);
+        if (arquivo) fd.append('logo', arquivo);
+        const resultado = await api('/empresa/pdf-exemplo', { method: 'POST', body: fd, isFormData: true });
+        window.open(resultado.pdf_url, '_blank');
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    document.getElementById('form-empresa').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        await api('/empresa', { method: 'PUT', body: fd, isFormData: true });
+        mostrarToast('Alterações salvas!');
+      } catch (err) { mostrarToast(err.message, 'erro'); }
+    });
+
+    carregar().catch(e => mostrarToast(e.message, 'erro'));
+  </script>
+</body>
+</html>

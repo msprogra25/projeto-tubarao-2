@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conta do Vendedor — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Conta do Vendedor</span></div>
+    </div>
+
+  <div class="container">
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Nova conta</h3>
+        <form id="form-nova-conta">
+          <div class="form-linha"><label>E-mail</label><input type="email" name="email" required></div>
+          <div class="form-linha"><label>Senha</label><input type="password" name="senha" required minlength="8"></div>
+          <div class="form-linha"><label>CNPJ</label><input name="cnpj" placeholder="00.000.000/0000-00"></div>
+          <div class="form-linha"><label>Endereço</label><input name="endereco" placeholder="Rua, número, bairro, cidade"></div>
+          <div class="form-linha"><label>CEP</label><input name="cep" placeholder="00000-000"></div>
+          <div class="form-linha"><label>Telefone</label><input name="telefone" placeholder="(00) 00000-0000"></div>
+          <button type="submit" class="btn btn-primario">Criar conta</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Contas cadastradas</h3>
+        <div id="lista-contas"><p class="vazio">Carregando...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+
+    document.getElementById('form-nova-conta').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dados = Object.fromEntries(new FormData(e.target));
+      try {
+        await api('/auth/registrar', { method: 'POST', body: dados });
+        mostrarToast('Conta criada');
+        e.target.reset();
+        carregarContas();
+      } catch (err) { mostrarToast(err.message, 'erro'); }
+    });
+
+    async function carregarContas() {
+      const contas = await api('/auth/contas');
+      const box = document.getElementById('lista-contas');
+      box.innerHTML = contas.map(c => `
+        <div class="item-carrinho" style="display:flex; justify-content:space-between; align-items:start; padding:0.7rem 0; border-bottom:1px solid var(--borda);">
+          <div>
+            <strong>${c.email}</strong>
+            <div style="color:var(--texto-suave); font-size:0.8rem;">Criada em ${formatarDataHora(c.criado_em)}</div>
+            ${c.cnpj ? `<div style="font-size:0.8rem; color:var(--texto-suave);">CNPJ: ${c.cnpj}</div>` : ''}
+            ${c.endereco ? `<div style="font-size:0.8rem; color:var(--texto-suave);">${c.endereco}${c.cep ? ` — CEP ${c.cep}` : ''}</div>` : ''}
+            ${c.telefone ? `<div style="font-size:0.8rem; color:var(--texto-suave);">Tel: ${c.telefone}</div>` : ''}
+          </div>
+          <div>
+            <button class="btn-icone" onclick='abrirEdicaoConta(${JSON.stringify(c)})' title="Editar">✏️</button>
+            <button class="btn-icone" onclick="excluirConta(${c.id})" title="Excluir">🗑️</button>
+          </div>
+        </div>`).join('') || '<p class="vazio">Nenhuma conta cadastrada.</p>';
+    }
+
+    function abrirEdicaoConta(conta) {
+      const fundo = document.createElement('div');
+      fundo.className = 'modal-fundo';
+      fundo.id = 'modal-editar-conta';
+      fundo.innerHTML = `
+        <div class="modal">
+          <h2>Editar conta</h2>
+          <form id="form-editar-conta">
+            <div class="form-linha"><label>E-mail</label><input name="email" value="${conta.email}" required></div>
+            <div class="form-linha"><label>Nova senha (deixe em branco para não alterar)</label><input type="password" name="senha" minlength="8"></div>
+            <div class="form-linha"><label>CNPJ</label><input name="cnpj" value="${conta.cnpj || ''}"></div>
+            <div class="form-linha"><label>Endereço</label><input name="endereco" value="${conta.endereco || ''}"></div>
+            <div class="form-linha"><label>CEP</label><input name="cep" value="${conta.cep || ''}"></div>
+            <div class="form-linha"><label>Telefone</label><input name="telefone" value="${conta.telefone || ''}"></div>
+            <div style="display:flex; gap:0.6rem; margin-top:0.6rem;">
+              <button type="button" class="btn btn-secundario" style="flex:1;" onclick="document.getElementById('modal-editar-conta').remove()">Cancelar</button>
+              <button type="submit" class="btn btn-primario" style="flex:1;">Salvar</button>
+            </div>
+          </form>
+        </div>`;
+      document.body.appendChild(fundo);
+      document.getElementById('form-editar-conta').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const dados = Object.fromEntries(new FormData(e.target));
+        if (!dados.senha) delete dados.senha;
+        try {
+          await api(`/auth/contas/${conta.id}`, { method: 'PUT', body: dados });
+          mostrarToast('Conta atualizada');
+          document.getElementById('modal-editar-conta').remove();
+          carregarContas();
+        } catch (err) { mostrarToast(err.message, 'erro'); }
+      });
+    }
+
+    async function excluirConta(id) {
+      if (!confirm('Excluir esta conta?')) return;
+      await api(`/auth/contas/${id}`, { method: 'DELETE' });
+      mostrarToast('Conta excluída');
+      carregarContas();
+    }
+
+    carregarContas().catch(e => mostrarToast(e.message, 'erro'));
+  </script>
+</body>
+</html>

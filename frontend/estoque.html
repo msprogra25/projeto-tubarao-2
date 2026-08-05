@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Estoque — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .busca-linha { display: flex; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .busca-linha input { flex: 1; min-width: 200px; }
+  .busca-linha select { min-width: 160px; }
+  #video-camera-estoque { width: 100%; max-width: 420px; border-radius: var(--raio); display: none; margin-bottom: 1rem; }
+  .fab { position: fixed; bottom: 1.6rem; right: 1.6rem; width: 58px; height: 58px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--verde-600), var(--azul-600)); color: #fff; font-size: 1.6rem;
+    display: flex; align-items: center; justify-content: center; box-shadow: var(--sombra); border: none; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Registro de Estoque</span></div>
+    </div>
+
+  <div class="container">
+    <div class="busca-linha">
+      <input id="busca" type="text" placeholder="Buscar por nome ou código de barras...">
+      <select id="filtro-categoria"><option value="">Todas as categorias</option></select>
+      <button class="btn-icone" onclick="alternarCamera()" title="Cadastrar via câmera">📷</button>
+      <button class="btn btn-secundario" onclick="gerenciarCategorias()">Editar categorias</button>
+    </div>
+    <video id="video-camera-estoque" autoplay muted playsinline></video>
+
+    <div class="card">
+      <div id="lista-produtos"><p class="vazio">Carregando...</p></div>
+    </div>
+  </div>
+
+  <button class="fab" onclick="abrirFormulario()" title="Novo produto">+</button>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+    let categorias = [];
+    let produtoEditando = null;
+
+    async function carregarCategorias() {
+      categorias = await api('/produtos/categorias/listar');
+      const select = document.getElementById('filtro-categoria');
+      select.innerHTML = '<option value="">Todas as categorias</option>' +
+        categorias.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    }
+
+    async function carregarProdutos() {
+      const busca = document.getElementById('busca').value;
+      const categoria_id = document.getElementById('filtro-categoria').value;
+      const params = new URLSearchParams();
+      if (busca) params.set('busca', busca);
+      if (categoria_id) params.set('categoria_id', categoria_id);
+
+      const produtos = await api(`/produtos?${params}`);
+      const box = document.getElementById('lista-produtos');
+      if (!produtos.length) { box.innerHTML = '<p class="vazio">Nenhum produto cadastrado.</p>'; return; }
+
+      box.innerHTML = `
+        <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th></th><th>Produto</th><th>Categoria</th><th>Preço</th><th>Estoque</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            ${produtos.map(p => `
+              <tr>
+                <td>${p.imagem ? `<img class="miniatura-produto" src="${p.imagem}" alt="">` : `<div class="miniatura-produto" style="display:flex;align-items:center;justify-content:center;">📦</div>`}</td>
+                <td><strong>${p.nome}</strong><br><span style="color:var(--texto-suave); font-size:0.8rem;">${p.codigo_barras || 's/ código'}</span></td>
+                <td>${p.categoria_nome || '-'}</td>
+                <td>${formatarMoeda(p.preco_venda)}</td>
+                <td>
+                  <span class="qtd-editavel" data-id="${p.id}" data-qtd="${p.quantidade}" data-minimo="${p.estoque_minimo}" onclick="editarQuantidadeInline(this)" style="cursor:pointer; text-decoration:underline dotted; font-weight:600;" title="Clique para editar a quantidade">
+                    ${p.quantidade} un.
+                  </span>
+                </td>
+                <td>${badgeEstoque(p)}</td>
+                <td>
+                  <button class="btn-icone" onclick='abrirFormulario(${JSON.stringify(p)})' title="Editar">✏️</button>
+                  ${p.imagem ? `<button class="btn-icone" onclick="enviarFotoAoDrive(${p.id})" title="Enviar foto ao Google Drive">☁️</button>` : ''}
+                  <button class="btn-icone" onclick="excluirProduto(${p.id})" title="Excluir">🗑️</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>`;
+    }
+
+    function badgeEstoque(p) {
+      if (p.quantidade < p.estoque_minimo) return '<span class="badge badge-alerta">⚠️ Falta de estoque</span>';
+      if (p.quantidade >= p.estoque_maximo) return '<span class="badge badge-alerta">Estoque no teto</span>';
+      return '<span class="badge badge-ok">Normal</span>';
+    }
+
+    async function editarQuantidadeInline(spanEl) {
+      const id = spanEl.dataset.id;
+      const atual = spanEl.dataset.qtd;
+      const nova = prompt('Nova quantidade em estoque:', atual);
+      if (nova === null) return; // cancelou
+      if (nova === '' || isNaN(Number(nova)) || Number(nova) < 0) {
+        mostrarToast('Digite um número válido', 'erro');
+        return;
+      }
+      try {
+        const resultado = await api(`/produtos/${id}/estoque`, { method: 'PATCH', body: { quantidade: Number(nova) } });
+        mostrarToast('Quantidade atualizada!');
+        if (resultado.falta_estoque) {
+          mostrarToast('⚠️ Atenção: esse produto ficou com estoque baixo', 'erro');
+        }
+        carregarProdutos();
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    document.getElementById('busca').addEventListener('input', () => { clearTimeout(window._t); window._t = setTimeout(carregarProdutos, 300); });
+    document.getElementById('filtro-categoria').addEventListener('change', carregarProdutos);
+
+    async function enviarFotoAoDrive(id) {
+      try {
+        mostrarToast('Enviando foto ao Google Drive...');
+        const resultado = await api(`/drive/enviar-foto-produto/${id}`, { method: 'POST' });
+        mostrarToast('Enviada! Abrindo no Drive...');
+        window.open(resultado.drive_url, '_blank');
+      } catch (err) { mostrarToast(err.message, 'erro'); }
+    }
+
+    async function excluirProduto(id) {
+      if (!confirm('Excluir este produto?')) return;
+      await api(`/produtos/${id}`, { method: 'DELETE' });
+      mostrarToast('Produto excluído');
+      carregarProdutos();
+    }
+
+    async function gerenciarCategorias() {
+      const fundo = document.createElement('div');
+      fundo.className = 'modal-fundo';
+      fundo.id = 'modal-categorias';
+      fundo.innerHTML = `
+        <div class="modal">
+          <h2>Categorias</h2>
+          <div style="display:flex; gap:0.5rem; margin-bottom:0.6rem;">
+            <input id="nova-categoria-nome" placeholder="Nome da categoria" style="flex:1;">
+          </div>
+          <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+            <input id="nova-categoria-localizacao" placeholder="Estante (ex: 5 ou 5, 4)" style="flex:1;">
+            <input id="nova-categoria-cor" type="color" value="#d4af37" style="width:48px; padding:0.2rem; cursor:pointer;">
+            <button class="btn btn-primario" onclick="criarCategoriaModal()">Adicionar</button>
+          </div>
+          <div id="lista-categorias-modal"><p class="vazio">Carregando...</p></div>
+          <button class="btn btn-secundario" style="width:100%; margin-top:0.8rem;" onclick="document.getElementById('modal-categorias').remove()">Fechar</button>
+        </div>`;
+      document.body.appendChild(fundo);
+      renderizarListaCategoriasModal();
+    }
+
+    async function renderizarListaCategoriasModal() {
+      const box = document.getElementById('lista-categorias-modal');
+      if (!categorias.length) { box.innerHTML = '<p class="vazio">Nenhuma categoria ainda. Adicione uma acima.</p>'; return; }
+      box.innerHTML = categorias.map(c => `
+        <div class="card" style="margin-bottom:0.6rem; padding:0.8rem; border-left:5px solid ${c.cor || '#d4af37'};" id="categoria-card-${c.id}">
+          <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="alternarProdutosCategoria(${c.id}, this)">
+            <div>
+              <strong>${c.nome}</strong>
+              ${c.localizacao ? `<span class="badge" style="background:${c.cor || '#d4af37'}22; color:${c.cor || '#d4af37'}; margin-left:0.4rem;">📍 Estante ${c.localizacao}</span>` : ''}
+            </div>
+            <div style="display:flex; align-items:center; gap:0.3rem;">
+              <span style="font-size:0.8rem; color:var(--texto-suave);">ver produtos ▾</span>
+              <button class="btn-icone" style="width:30px;height:30px;" onclick="event.stopPropagation(); abrirEdicaoCategoria(${c.id})" title="Editar categoria">✏️</button>
+              <button class="btn-icone" style="width:30px;height:30px;" onclick="event.stopPropagation(); excluirCategoriaModal(${c.id})" title="Excluir categoria">🗑️</button>
+            </div>
+          </div>
+          <div class="edicao-categoria" style="display:none; margin-top:0.7rem; padding-top:0.7rem; border-top:1px solid var(--borda);"></div>
+          <div class="produtos-da-categoria" style="display:none; margin-top:0.7rem; padding-top:0.7rem; border-top:1px solid var(--borda);"></div>
+        </div>
+      `).join('');
+    }
+
+    function abrirEdicaoCategoria(id) {
+      const c = categorias.find(cat => cat.id === id);
+      if (!c) return;
+      const container = document.querySelector(`#categoria-card-${id} .edicao-categoria`);
+      // fecha visualização de produtos se estiver aberta, pra não confundir
+      const produtosBox = document.querySelector(`#categoria-card-${id} .produtos-da-categoria`);
+      if (produtosBox) produtosBox.style.display = 'none';
+
+      const aberto = container.style.display === 'block';
+      document.querySelectorAll('.edicao-categoria').forEach(el => el.style.display = 'none');
+      if (aberto) return;
+
+      container.style.display = 'block';
+      container.innerHTML = `
+        <div class="form-linha"><label>Nome</label><input id="editar-nome-${id}" value="${c.nome}"></div>
+        <div class="form-linha"><label>Estante</label><input id="editar-local-${id}" value="${c.localizacao || ''}" placeholder="ex: 5 ou 5, 4"></div>
+        <div class="form-linha"><label>Cor</label><input id="editar-cor-${id}" type="color" value="${c.cor || '#d4af37'}" style="width:48px; padding:0.2rem; cursor:pointer;"></div>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-secundario" style="flex:1;" onclick="document.querySelector('#categoria-card-${id} .edicao-categoria').style.display='none'">Cancelar</button>
+          <button class="btn btn-primario" style="flex:1;" onclick="salvarEdicaoCategoria(${id})">Salvar</button>
+        </div>
+      `;
+    }
+
+    async function salvarEdicaoCategoria(id) {
+      const nome = document.getElementById(`editar-nome-${id}`).value.trim();
+      const localizacao = document.getElementById(`editar-local-${id}`).value.trim();
+      const cor = document.getElementById(`editar-cor-${id}`).value;
+      if (!nome) { mostrarToast('Nome não pode ficar em branco', 'erro'); return; }
+      try {
+        await api(`/produtos/categorias/${id}`, { method: 'PUT', body: { nome, localizacao, cor } });
+        mostrarToast('Categoria atualizada');
+        await carregarCategorias();
+        renderizarListaCategoriasModal();
+        carregarProdutos();
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    async function alternarProdutosCategoria(categoriaId, headerEl) {
+      const cardEl = headerEl.closest('.card');
+      const container = cardEl.querySelector('.produtos-da-categoria');
+      // fecha a edição se estiver aberta, pra não confundir
+      const edicaoBox = cardEl.querySelector('.edicao-categoria');
+      if (edicaoBox) edicaoBox.style.display = 'none';
+
+      const aberto = container.style.display === 'block';
+      // fecha todas as outras categorias abertas
+      document.querySelectorAll('.produtos-da-categoria').forEach(el => el.style.display = 'none');
+      if (aberto) return; // já estava aberta, então só fecha (comportamento acima)
+
+      container.style.display = 'block';
+      container.innerHTML = '<p class="vazio" style="padding:0.5rem;">Carregando produtos...</p>';
+      try {
+        const produtos = await api(`/produtos?categoria_id=${categoriaId}`);
+        if (!produtos.length) {
+          container.innerHTML = '<p class="vazio" style="padding:0.5rem;">Nenhum produto nesta categoria ainda.</p>';
+          return;
+        }
+        container.innerHTML = produtos.map(p => `
+          <div style="display:flex; align-items:center; gap:0.6rem; padding:0.4rem 0;">
+            ${p.imagem ? `<img class="miniatura-produto" style="width:32px;height:32px;" src="${p.imagem}" alt="">` : `<div class="miniatura-produto" style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;">📦</div>`}
+            <div style="flex:1;">
+              <div style="font-size:0.88rem;">${p.nome}</div>
+              <div style="font-size:0.76rem; color:var(--texto-suave);">${formatarMoeda(p.preco_venda)} · estoque: ${p.quantidade}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<p class="vazio" style="padding:0.5rem;">Erro ao carregar produtos.</p>`;
+      }
+    }
+
+    async function criarCategoriaModal() {
+      const input = document.getElementById('nova-categoria-nome');
+      const nome = input.value.trim();
+      const localizacao = document.getElementById('nova-categoria-localizacao').value.trim();
+      const cor = document.getElementById('nova-categoria-cor').value;
+      if (!nome) { mostrarToast('Digite um nome para a categoria', 'erro'); return; }
+      await api('/produtos/categorias/criar', { method: 'POST', body: { nome, localizacao, cor } });
+      input.value = '';
+      document.getElementById('nova-categoria-localizacao').value = '';
+      await carregarCategorias();
+      renderizarListaCategoriasModal();
+      mostrarToast('Categoria criada');
+    }
+
+    async function excluirCategoriaModal(id) {
+      if (!confirm('Excluir esta categoria? Os produtos dela ficam sem categoria.')) return;
+      await api(`/produtos/categorias/${id}`, { method: 'DELETE' });
+      await carregarCategorias();
+      renderizarListaCategoriasModal();
+      carregarProdutos();
+      mostrarToast('Categoria excluída');
+    }
+
+    // ---------------- Formulário (modal) ----------------
+    function abrirFormulario(produto = null) {
+      produtoEditando = produto;
+      precoEditadoManualmente = false;
+      const fundo = document.createElement('div');
+      fundo.className = 'modal-fundo';
+      fundo.id = 'modal-produto';
+      fundo.innerHTML = `
+        <div class="modal">
+          <h2>${produto ? 'Editar produto' : 'Novo produto'}</h2>
+          <form id="form-produto">
+            <div class="form-linha"><label>Nome do produto</label><input name="nome" required value="${produto?.nome || ''}"></div>
+            <div class="form-linha"><label>Código de barras</label><input name="codigo_barras" value="${produto?.codigo_barras || ''}"></div>
+            <div class="form-linha">
+              <label>Preço de venda (R$)</label>
+              <input type="number" step="0.01" name="preco_venda" id="input-preco-venda" value="${produto?.preco_venda ?? 0}">
+              <span style="font-size:0.78rem; color:var(--texto-suave);">Calculado automaticamente pela formação de preço abaixo — edite aqui para sobrepor manualmente.</span>
+            </div>
+            <div class="form-linha"><label>Categoria</label>
+              <select name="categoria_id">
+                <option value="">Sem categoria</option>
+                ${categorias.map(c => `<option value="${c.id}" ${produto?.categoria_id === c.id ? 'selected' : ''}>${c.nome}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-linha"><label>Imagem (PNG/JPG)</label><input type="file" name="imagem" accept="image/png,image/jpeg"></div>
+
+            <div class="form-grid">
+              <div class="form-linha"><label>Qtd. em estoque</label><input type="number" name="quantidade" value="${produto?.quantidade ?? 0}"></div>
+              <div class="form-linha"><label>Estoque mínimo</label><input type="number" name="estoque_minimo" value="${produto?.estoque_minimo ?? 10}"></div>
+              <div class="form-linha"><label>Estoque máximo</label><input type="number" name="estoque_maximo" value="${produto?.estoque_maximo ?? 100}"></div>
+            </div>
+
+            <h3 style="margin-top:1rem;">Formação de preço</h3>
+            <div class="form-grid">
+              <div class="form-linha"><label>Preço de compra</label><input type="number" step="0.01" name="preco_compra" value="${produto?.preco_compra ?? 0}"></div>
+              <div class="form-linha"><label>IPI</label><input type="number" step="0.01" name="ipi" value="${produto?.ipi ?? 0}"></div>
+              <div class="form-linha"><label>Desp. DRI (frete/seguro)</label><input type="number" step="0.01" name="despesas_dri" value="${produto?.despesas_dri ?? 0}"></div>
+              <div class="form-linha"><label>Crédito de ICMS</label><input type="number" step="0.01" name="credito_icms" value="${produto?.credito_icms ?? 0}"></div>
+              <div class="form-linha"><label>Desp. Faturamento (DF%)</label><input type="number" step="0.01" name="despesas_faturamento_pct" value="${produto?.despesas_faturamento_pct ?? 0}"></div>
+              <div class="form-linha"><label>Desp. Operacionais (DO%)</label><input type="number" step="0.01" name="despesas_operacionais_pct" value="${produto?.despesas_operacionais_pct ?? 0}"></div>
+              <div class="form-linha"><label>Lucro desejado (L%)</label><input type="number" step="0.01" name="lucro_desejado_pct" value="${produto?.lucro_desejado_pct ?? 0}"></div>
+            </div>
+
+            <h3 style="margin-top:1rem;">Fiscal</h3>
+            <div class="form-grid">
+              <div class="form-linha"><label>NCM</label><input name="ncm" value="${produto?.ncm || ''}"></div>
+              <div class="form-linha"><label>CEST (7 dígitos)</label><input name="cest" maxlength="7" value="${produto?.cest || ''}"></div>
+              <div class="form-linha"><label>Origem</label>
+                <select name="origem">
+                  <option value="0" ${produto?.origem == 0 ? 'selected' : ''}>0 - Nacional</option>
+                  <option value="1" ${produto?.origem == 1 ? 'selected' : ''}>1 - Estrangeira (Importação Direta)</option>
+                  <option value="2" ${produto?.origem == 2 ? 'selected' : ''}>2 - Estrangeira (Mercado Interno)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:0.6rem; margin-top:1.2rem;">
+              <button type="button" class="btn btn-secundario" style="flex:1;" onclick="fecharFormulario()">Cancelar</button>
+              <button type="submit" class="btn btn-primario" style="flex:1;">Salvar</button>
+            </div>
+          </form>
+        </div>`;
+      document.body.appendChild(fundo);
+
+      const form = document.getElementById('form-produto');
+      const camposCusto = ['preco_compra', 'ipi', 'despesas_dri', 'credito_icms', 'despesas_faturamento_pct', 'despesas_operacionais_pct', 'lucro_desejado_pct'];
+      camposCusto.forEach(nome => {
+        form.querySelector(`[name=${nome}]`).addEventListener('input', recalcularPrecoPreview);
+      });
+      // editar o preço na mão marca como "manual": novos cálculos de custo não sobrescrevem mais
+      document.getElementById('input-preco-venda').addEventListener('input', () => {
+        precoEditadoManualmente = true;
+      });
+      form.addEventListener('submit', salvarProduto);
+    }
+
+    let precoEditadoManualmente = false;
+
+    function fecharFormulario() { document.getElementById('modal-produto')?.remove(); }
+
+    async function recalcularPrecoPreview() {
+      if (precoEditadoManualmente) return; // usuário já ajustou o preço na mão, respeita a escolha dele
+      const form = document.getElementById('form-produto');
+      const fd = new FormData(form);
+      try {
+        const resultado = await api('/produtos/calcular-preco', {
+          method: 'POST',
+          body: {
+            preco_compra: Number(fd.get('preco_compra')), ipi: Number(fd.get('ipi')),
+            despesas_dri: Number(fd.get('despesas_dri')), credito_icms: Number(fd.get('credito_icms')),
+            despesas_faturamento_pct: Number(fd.get('despesas_faturamento_pct')),
+            despesas_operacionais_pct: Number(fd.get('despesas_operacionais_pct')),
+            lucro_desejado_pct: Number(fd.get('lucro_desejado_pct')),
+          },
+        });
+        document.getElementById('input-preco-venda').value = resultado.precoVenda;
+      } catch (e) { /* aguarda valores válidos */ }
+    }
+
+    async function salvarProduto(e) {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const cest = fd.get('cest');
+      if (cest && !/^\d{7}$/.test(cest)) {
+        mostrarToast('CEST deve ter exatamente 7 dígitos numéricos', 'erro');
+        return;
+      }
+      try {
+        if (produtoEditando) {
+          await api(`/produtos/${produtoEditando.id}`, { method: 'PUT', body: fd, isFormData: true });
+        } else {
+          await api('/produtos', { method: 'POST', body: fd, isFormData: true });
+        }
+        mostrarToast('Produto salvo com sucesso');
+        fecharFormulario();
+        carregarProdutos();
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    // ---------------- Câmera para cadastro rápido de código de barras ----------------
+    let streamCamera = null, detectorAtivo = false;
+    async function alternarCamera() {
+      const video = document.getElementById('video-camera-estoque');
+      if (streamCamera) { streamCamera.getTracks().forEach(t => t.stop()); streamCamera = null; detectorAtivo = false; video.style.display = 'none'; return; }
+      if (!('BarcodeDetector' in window)) { mostrarToast('Câmera não suportada neste navegador. Digite o código manualmente.', 'erro'); return; }
+      try {
+        streamCamera = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = streamCamera; video.style.display = 'block'; detectorAtivo = true;
+        const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+        (async function loop() {
+          while (detectorAtivo) {
+            try {
+              const codigos = await detector.detect(video);
+              if (codigos.length) {
+                abrirFormulario();
+                document.querySelector('[name=codigo_barras]').value = codigos[0].rawValue;
+                alternarCamera();
+                break;
+              }
+            } catch (e) {}
+            await new Promise(r => requestAnimationFrame(r));
+          }
+        })();
+      } catch (err) { mostrarToast('Não foi possível acessar a câmera: ' + err.message, 'erro'); }
+    }
+
+    carregarCategorias().then(carregarProdutos).catch(e => mostrarToast(e.message, 'erro'));
+  </script>
+</body>
+</html>

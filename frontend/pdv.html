@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Efetuar Venda — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .busca-linha { display: flex; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .busca-linha input { flex: 1; min-width: 150px; }
+  #video-camera { width: 100%; max-width: 420px; border-radius: var(--raio); display: none; margin-bottom: 1rem; }
+  .item-carrinho { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 0; border-bottom: 1px solid var(--borda); gap: 0.6rem; }
+  .item-carrinho .qtd-controle { display: flex; align-items: center; gap: 0.4rem; }
+  .item-carrinho .qtd-controle button { width: 28px; height: 28px; background: var(--verde-100); }
+  .total-box { display: flex; justify-content: space-between; align-items: center; font-size: 1.3rem; font-weight: 700; margin-top: 1rem; padding-top: 1rem; border-top: 2px solid var(--borda); }
+  .barra-flutuante { position: fixed; bottom: 0; left: 0; right: 0; padding: 1rem; background: var(--bg-elevado); border-top: 1px solid var(--borda); display: flex; gap: 0.7rem; }
+  .barra-flutuante button { flex: 1; }
+  .forma-pagamento-btn { padding: 0.6rem 0.4rem; font-size: 0.82rem; }
+  .forma-pagamento-btn.ativo { background: linear-gradient(135deg, var(--verde-600), var(--azul-600)); color: #fff; border-color: transparent; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="location.href='dashboard.html'" title="Fechar">✕</button>
+    <div class="marca"><span>Efetuar Venda</span></div>
+    </div>
+
+  <div class="container" style="padding-bottom:6rem;">
+    <div class="busca-linha">
+      <input id="busca-produto" type="text" placeholder="Buscar por nome, categoria ou código de barras...">
+      <select id="filtro-categoria-pdv" style="max-width:160px;"><option value="">Todas as categorias</option></select>
+      <button class="btn-icone" onclick="alternarCamera()" title="Ler código de barras">📷</button>
+    </div>
+    <video id="video-camera" autoplay muted playsinline></video>
+
+    <div class="card">
+      <h3>Carrinho</h3>
+      <div id="carrinho-vazio" class="vazio">Nenhum produto adicionado ainda.</div>
+      <div id="lista-carrinho"></div>
+      <div class="total-box" id="total-box" style="display:none;">
+        <span>Total</span>
+        <span id="valor-total">R$ 0,00</span>
+      </div>
+
+      <div id="box-pagamento" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--borda);">
+        <label style="font-size:0.82rem; font-weight:600; color:var(--texto-suave); display:block; margin-bottom:0.4rem;">Valor pago pelo cliente</label>
+        <input id="valor-pago-input" type="number" step="0.01" min="0" placeholder="Deixe em branco se não for dinheiro" oninput="calcularTroco()" style="width:100%; margin-bottom:0.3rem;">
+        <p id="troco-exibido" style="font-size:0.88rem; font-weight:600; color:var(--verde-700); margin:0;"></p>
+      </div>
+    </div>
+
+    <div id="modo-normal-pdv">
+      <button class="btn btn-secundario" style="width:100%; margin:1rem 0;" onclick="alternarPainelFiscal()" id="btn-toggle-fiscal">
+        🧾 Ajuste fiscal e formação de preço
+      </button>
+      <div id="painel-fiscal" class="card" style="display:none; margin-bottom:1rem;">
+        <p style="font-size:0.85rem; color:var(--texto-suave); margin-top:0;">Ajuste manual dos dados fiscais do último produto adicionado ao carrinho — todos os campos abaixo são editáveis e o preço de venda é recalculado na hora, só para esta venda.</p>
+        <p id="fiscal-produto-alvo" style="font-weight:600; margin-bottom:0.8rem;">Nenhum produto selecionado ainda</p>
+        <div class="form-grid">
+          <div class="form-linha"><label>NCM</label><input id="fiscal-ncm" placeholder="0000.00.00"></div>
+          <div class="form-linha"><label>IPI</label><input id="fiscal-ipi" type="number" step="0.01" value="0"></div>
+          <div class="form-linha"><label>Desp. DRI (frete/seguro)</label><input id="fiscal-dri" type="number" step="0.01" value="0"></div>
+          <div class="form-linha"><label>Crédito de ICMS</label><input id="fiscal-icms" type="number" step="0.01" value="0"></div>
+          <div class="form-linha"><label>Desp. Faturamento (DF%)</label><input id="fiscal-df" type="number" step="0.01" value="0"></div>
+          <div class="form-linha">
+            <label>Custo Real (R$)</label>
+            <input id="fiscal-custo-real" type="number" step="0.01" value="0">
+          </div>
+          <div class="form-linha">
+            <label>Markup Divisor</label>
+            <input id="fiscal-markup" type="number" step="0.0001" min="0.01" max="0.99" value="0.65">
+          </div>
+        </div>
+        <p style="font-size:0.78rem; color:var(--texto-suave); margin-top:-0.2rem;">Custo Real e Markup se recalculam sozinhos a partir dos campos acima — mas editando qualquer um deles na mão, o sistema para de sobrescrever e respeita o que você digitou.</p>
+        <p style="font-size:0.95rem;">Novo preço de venda: <strong id="fiscal-preco-novo">R$ 0,00</strong></p>
+        <button class="btn btn-primario" style="width:100%;" onclick="aplicarAjusteFiscal()">Aplicar ao item no carrinho</button>
+      </div>
+
+      <div id="box-forma-pagamento" class="card" style="display:none; margin-bottom:1rem;">
+        <label style="font-size:0.82rem; font-weight:600; color:var(--texto-suave); display:block; margin-bottom:0.5rem;">Forma de pagamento</label>
+        <div class="grid grid-fixo-2col" style="gap:0.5rem;">
+          <button type="button" class="btn btn-secundario forma-pagamento-btn" data-forma="dinheiro" onclick="selecionarPagamento('dinheiro')">💵 Dinheiro</button>
+          <button type="button" class="btn btn-secundario forma-pagamento-btn" data-forma="pix" onclick="selecionarPagamento('pix')">🔑 PIX</button>
+          <button type="button" class="btn btn-secundario forma-pagamento-btn" data-forma="cartao_credito" onclick="selecionarPagamento('cartao_credito')">💳 Crédito</button>
+          <button type="button" class="btn btn-secundario forma-pagamento-btn" data-forma="cartao_debito" onclick="selecionarPagamento('cartao_debito')">💳 Débito</button>
+        </div>
+      </div>
+
+      <div id="resultados-busca" class="card" style="display:none; margin-bottom:1rem;"></div>
+    </div>
+  </div>
+
+  <div class="barra-flutuante">
+    <button class="btn btn-secundario" onclick="location.href='dashboard.html'">Cancelar</button>
+    <button class="btn btn-primario" id="btn-concluir" onclick="concluirVenda()">Concluir Venda</button>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+    let carrinho = []; // { produto_id, nome, categoria, codigo_barras, valor_unitario, quantidade }
+
+    async function carregarCategoriasPdv() {
+      const categorias = await api('/produtos/categorias/listar');
+      const select = document.getElementById('filtro-categoria-pdv');
+      select.innerHTML = '<option value="">Todas as categorias</option>' +
+        categorias.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    }
+    carregarCategoriasPdv().catch(e => mostrarToast(e.message, 'erro'));
+
+    // ---------------- Busca ----------------
+    let timerBusca;
+    document.getElementById('busca-produto').addEventListener('input', (e) => {
+      clearTimeout(timerBusca);
+      timerBusca = setTimeout(disparaBusca, 300);
+    });
+    document.getElementById('filtro-categoria-pdv').addEventListener('change', disparaBusca);
+
+    function disparaBusca() {
+      const termo = document.getElementById('busca-produto').value.trim();
+      const categoriaId = document.getElementById('filtro-categoria-pdv').value;
+      if (!termo && !categoriaId) { document.getElementById('resultados-busca').style.display = 'none'; return; }
+      buscarProdutos(termo, categoriaId);
+    }
+
+    async function buscarProdutos(termo, categoriaId = '') {
+      try {
+        const params = new URLSearchParams();
+        if (termo) params.set('busca', termo);
+        if (categoriaId) params.set('categoria_id', categoriaId);
+        const produtos = await api(`/produtos?${params}`);
+        const box = document.getElementById('resultados-busca');
+        box.style.display = 'block';
+        if (!produtos.length) {
+          box.innerHTML = `<p class="alerta-nao-cadastrado">⚠️ Produto não cadastrado. Cadastre-o em "Registro de Estoque" antes de vendê-lo.</p>`;
+          return;
+        }
+        box.innerHTML = produtos.map(p => `
+          <div class="item-carrinho">
+            <div class="linha-produto-busca">
+              ${p.imagem ? `<img class="miniatura-produto" src="${p.imagem}" alt="">` : `<div class="miniatura-produto" style="display:flex;align-items:center;justify-content:center;">📦</div>`}
+              <div>
+                <strong>${p.nome}</strong>
+                <div style="color:var(--texto-suave); font-size:0.82rem;">${p.categoria_nome ? `<span class="badge" style="background:${p.categoria_cor || '#d4af37'}22; color:${p.categoria_cor || '#d4af37'}; font-weight:700; margin-right:4px;">${p.categoria_nome}</span>` : 'Sem categoria'} · ${formatarMoeda(p.preco_venda)} · estoque: ${p.quantidade}</div>
+              </div>
+            </div>
+            <button class="btn btn-primario" style="padding:0.5rem 0.9rem;" onclick='adicionarAoCarrinho(${JSON.stringify(p)})'>Adicionar</button>
+          </div>
+        `).join('');
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    async function buscarPorCodigoBarras(codigo) {
+      try {
+        const p = await api(`/produtos/codigo/${encodeURIComponent(codigo)}`);
+        adicionarAoCarrinho(p);
+        mostrarToast(`"${p.nome}" adicionado`);
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    function adicionarAoCarrinho(produto) {
+      const existente = carrinho.find(i => i.produto_id === produto.id);
+      if (existente) {
+        existente.quantidade += 1;
+      } else {
+        carrinho.push({
+          produto_id: produto.id, nome: produto.nome, categoria: produto.categoria_nome,
+          codigo_barras: produto.codigo_barras, valor_unitario: produto.preco_venda, quantidade: 1,
+          preco_compra: produto.preco_compra, ipi: produto.ipi, ncm: produto.ncm,
+        });
+      }
+      renderizarCarrinho();
+      document.getElementById('busca-produto').value = '';
+      document.getElementById('resultados-busca').style.display = 'none';
+      selecionarItemParaFiscal(produto.id);
+    }
+
+    // ---------------- Painel de ajuste fiscal ----------------
+    let itemFiscalSelecionado = null;
+
+    function alternarPainelFiscal() {
+      const painel = document.getElementById('painel-fiscal');
+      painel.style.display = painel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function selecionarItemParaFiscal(produtoId) {
+      const item = carrinho.find(i => i.produto_id === produtoId);
+      if (!item) return;
+      document.getElementById('painel-fiscal').style.display = 'block';
+      itemFiscalSelecionado = item;
+      markupEditadoManualmente = false;
+      custoRealEditadoManualmente = false;
+      document.getElementById('fiscal-produto-alvo').textContent = item.nome;
+      document.getElementById('fiscal-ncm').value = item.ncm || '';
+      document.getElementById('fiscal-ipi').value = item.ipi || 0;
+      document.getElementById('fiscal-dri').value = 0;
+      document.getElementById('fiscal-icms').value = 0;
+      document.getElementById('fiscal-df').value = 0;
+      document.getElementById('fiscal-markup').value = 0.65;
+      recalcularFiscal();
+    }
+
+    let markupEditadoManualmente = false;
+    let custoRealEditadoManualmente = false;
+
+    async function recalcularFiscal() {
+      if (!itemFiscalSelecionado) return;
+
+      if (!custoRealEditadoManualmente) {
+        // Custo Real = Preço de Compra + IPI + Desp. DRI - Crédito de ICMS
+        const ipi = Number(document.getElementById('fiscal-ipi').value) || 0;
+        const dri = Number(document.getElementById('fiscal-dri').value) || 0;
+        const icms = Number(document.getElementById('fiscal-icms').value) || 0;
+        const custoReal = Number(itemFiscalSelecionado.preco_compra || 0) + ipi + dri - icms;
+        document.getElementById('fiscal-custo-real').value = custoReal.toFixed(2);
+      }
+
+      if (!markupEditadoManualmente) {
+        // recalcula o markup a partir do DF% (fórmula padrão), só se o usuário não sobrescreveu na mão
+        const ipi = Number(document.getElementById('fiscal-ipi').value) || 0;
+        const dri = Number(document.getElementById('fiscal-dri').value) || 0;
+        const icms = Number(document.getElementById('fiscal-icms').value) || 0;
+        const df = Number(document.getElementById('fiscal-df').value) || 0;
+        try {
+          const resultado = await api('/produtos/calcular-preco', {
+            method: 'POST',
+            body: {
+              preco_compra: itemFiscalSelecionado.preco_compra || 0, ipi,
+              despesas_dri: dri, credito_icms: icms,
+              despesas_faturamento_pct: df, despesas_operacionais_pct: 0, lucro_desejado_pct: 0,
+            },
+          });
+          document.getElementById('fiscal-markup').value = resultado.markupDivisor;
+        } catch (e) { /* soma de % inválida, mantém markup atual */ }
+      }
+
+      const custoReal = Number(document.getElementById('fiscal-custo-real').value) || 0;
+      const markup = Number(document.getElementById('fiscal-markup').value) || 0.01;
+      const precoNovo = custoReal / markup;
+      document.getElementById('fiscal-preco-novo').textContent = formatarMoeda(precoNovo);
+    }
+
+    document.getElementById('fiscal-custo-real').addEventListener('input', () => {
+      custoRealEditadoManualmente = true;
+      recalcularFiscal();
+    });
+    document.getElementById('fiscal-markup').addEventListener('input', () => {
+      markupEditadoManualmente = true;
+      recalcularFiscal();
+    });
+    ['fiscal-ipi', 'fiscal-dri', 'fiscal-icms', 'fiscal-df'].forEach(id => {
+      document.getElementById(id).addEventListener('input', recalcularFiscal);
+    });
+
+    function aplicarAjusteFiscal() {
+      if (!itemFiscalSelecionado) { mostrarToast('Adicione um produto ao carrinho primeiro', 'erro'); return; }
+      const textoPreco = document.getElementById('fiscal-preco-novo').textContent;
+      const novoPreco = Number(textoPreco.replace(/[^\d,.-]/g, '').replace(',', '.'));
+      if (!novoPreco || novoPreco <= 0) { mostrarToast('Preço calculado inválido', 'erro'); return; }
+      itemFiscalSelecionado.valor_unitario = novoPreco;
+      renderizarCarrinho();
+      mostrarToast(`Preço de "${itemFiscalSelecionado.nome}" ajustado para ${formatarMoeda(novoPreco)} nesta venda`);
+    }
+
+    function alterarQuantidade(produtoId, delta) {
+      const item = carrinho.find(i => i.produto_id === produtoId);
+      if (!item) return;
+      item.quantidade += delta;
+      if (item.quantidade <= 0) carrinho = carrinho.filter(i => i.produto_id !== produtoId);
+      renderizarCarrinho();
+    }
+
+    function renderizarCarrinho() {
+      const lista = document.getElementById('lista-carrinho');
+      const vazio = document.getElementById('carrinho-vazio');
+      const totalBox = document.getElementById('total-box');
+
+      if (!carrinho.length) {
+        lista.innerHTML = ''; vazio.style.display = 'block'; totalBox.style.display = 'none';
+        document.getElementById('box-pagamento').style.display = 'none';
+        document.getElementById('box-forma-pagamento').style.display = 'none';
+        return;
+      }
+      vazio.style.display = 'none'; totalBox.style.display = 'flex';
+      document.getElementById('box-pagamento').style.display = 'block';
+      document.getElementById('box-forma-pagamento').style.display = 'block';
+
+      lista.innerHTML = carrinho.map(i => `
+        <div class="item-carrinho">
+          <div>
+            <strong>${i.nome}</strong>
+            <div style="color:var(--texto-suave); font-size:0.82rem;">${i.categoria || ''} · ${i.codigo_barras || 's/ código'} · ${formatarMoeda(i.valor_unitario)} un.</div>
+          </div>
+          <div class="qtd-controle">
+            <button onclick="alterarQuantidade(${i.produto_id}, -1)">−</button>
+            <span>${i.quantidade}</span>
+            <button onclick="alterarQuantidade(${i.produto_id}, 1)">+</button>
+          </div>
+          <strong>${formatarMoeda(i.valor_unitario * i.quantidade)}</strong>
+        </div>
+      `).join('');
+
+      const total = carrinho.reduce((acc, i) => acc + i.valor_unitario * i.quantidade, 0);
+      document.getElementById('valor-total').textContent = formatarMoeda(total);
+    }
+
+    // ---------------- Câmera / leitura de código de barras ----------------
+    let streamCamera = null;
+    let detectorAtivo = false;
+
+    async function alternarCamera() {
+      const video = document.getElementById('video-camera');
+      const modoNormal = document.getElementById('modo-normal-pdv');
+      if (streamCamera) {
+        streamCamera.getTracks().forEach(t => t.stop());
+        streamCamera = null; detectorAtivo = false;
+        video.style.display = 'none';
+        modoNormal.style.display = 'block'; // volta a mostrar busca/painel fiscal
+        return;
+      }
+      if (!('BarcodeDetector' in window)) {
+        mostrarToast('Seu navegador não suporta leitura de código de barras via câmera. Digite o código manualmente.', 'erro');
+        return;
+      }
+      try {
+        streamCamera = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = streamCamera;
+        video.style.display = 'block';
+        modoNormal.style.display = 'none'; // tela dedicada: câmera + carrinho, sem distrações
+        detectorAtivo = true;
+        lerCodigoContinuamente(video);
+      } catch (err) {
+        mostrarToast('Não foi possível acessar a câmera: ' + err.message, 'erro');
+      }
+    }
+
+    async function lerCodigoContinuamente(video) {
+      const detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'] });
+      while (detectorAtivo) {
+        try {
+          const codigos = await detector.detect(video);
+          if (codigos.length) {
+            await buscarPorCodigoBarras(codigos[0].rawValue);
+            await new Promise(r => setTimeout(r, 1200)); // evita leituras duplicadas
+          }
+        } catch (e) { /* frame sem leitura, ignora */ }
+        await new Promise(r => requestAnimationFrame(r));
+      }
+    }
+
+    // ---------------- Forma de pagamento ----------------
+    let formaPagamentoSelecionada = 'dinheiro'; // padrão
+
+    function selecionarPagamento(forma) {
+      formaPagamentoSelecionada = forma;
+      document.querySelectorAll('.forma-pagamento-btn').forEach(btn => {
+        btn.classList.toggle('ativo', btn.dataset.forma === forma);
+      });
+    }
+    // marca "Dinheiro" como padrão visualmente assim que a página carrega
+    selecionarPagamento('dinheiro');
+
+    function totalDoCarrinho() {
+      return carrinho.reduce((acc, i) => acc + i.valor_unitario * i.quantidade, 0);
+    }
+
+    function calcularTroco() {
+      const valorPago = Number(document.getElementById('valor-pago-input').value);
+      const exibicao = document.getElementById('troco-exibido');
+      if (!document.getElementById('valor-pago-input').value) { exibicao.textContent = ''; return; }
+      const total = totalDoCarrinho();
+      if (isNaN(valorPago) || valorPago < total) {
+        exibicao.textContent = `Faltam ${formatarMoeda(total - (valorPago || 0))}`;
+        exibicao.style.color = 'var(--vermelho)';
+      } else {
+        exibicao.textContent = `Troco: ${formatarMoeda(valorPago - total)}`;
+        exibicao.style.color = 'var(--verde-700)';
+      }
+    }
+
+    // ---------------- Finalizar venda ----------------
+    async function concluirVenda() {
+      if (!carrinho.length) { mostrarToast('Adicione ao menos um produto', 'erro'); return; }
+      if (!formaPagamentoSelecionada) { mostrarToast('Selecione a forma de pagamento', 'erro'); return; }
+      const valorPagoInput = document.getElementById('valor-pago-input').value;
+      const btn = document.getElementById('btn-concluir');
+      btn.disabled = true; btn.textContent = 'Processando...';
+      try {
+        const resultado = await api('/vendas', {
+          method: 'POST',
+          body: {
+            itens: carrinho.map(i => ({ produto_id: i.produto_id, quantidade: i.quantidade })),
+            forma_pagamento: formaPagamentoSelecionada,
+            valor_recebido: valorPagoInput ? Number(valorPagoInput) : null,
+          },
+        });
+        mostrarPosVenda(resultado);
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Concluir Venda';
+      }
+    }
+
+    const NOMES_PAGAMENTO = { dinheiro: '💵 Dinheiro', pix: '🔑 PIX', cartao_credito: '💳 Cartão de Crédito', cartao_debito: '💳 Cartão de Débito' };
+
+    function mostrarPosVenda(resultado) {
+      const fundo = document.createElement('div');
+      fundo.className = 'modal-fundo';
+      const urlDocumento = resultado.pdf_url ? resultado.pdf_url.replace('/storage', '/api/storage') : null;
+      fundo.innerHTML = `
+        <div class="modal" style="text-align:center;">
+          <h2>Venda concluída! ✅</h2>
+          <p style="color:var(--texto-suave);">Total: <strong>${formatarMoeda(resultado.total)}</strong></p>
+          <p style="color:var(--texto-suave); margin-top:-0.6rem;">${NOMES_PAGAMENTO[resultado.forma_pagamento] || resultado.forma_pagamento}</p>
+          ${resultado.troco !== null && resultado.troco !== undefined ? `<p style="color:var(--verde-700); font-weight:600; margin-top:-0.6rem;">Troco: ${formatarMoeda(resultado.troco)}</p>` : ''}
+          ${urlDocumento ? `
+            <div style="display:flex; gap:0.6rem; margin:1rem 0;">
+              <a class="btn btn-primario" style="flex:1; text-decoration:none;" href="${urlDocumento}" download target="_blank">📄 Baixar PDF</a>
+              <a class="btn btn-secundario" style="flex:1; text-decoration:none;" href="${urlDocumento}" target="_blank">🧾 Ver Nota Fiscal</a>
+            </div>
+            <p style="font-size:0.76rem; color:var(--texto-suave); margin-top:-0.6rem;">O mesmo documento traz os dados fiscais (NCM/CEST/Origem) — é um comprovante interno, não substitui uma NF-e.</p>
+          ` : '<p style="color:var(--texto-suave);">PDF indisponível no momento.</p>'}
+          <button class="btn btn-secundario" style="width:100%; margin-top:0.8rem;" onclick="location.href='dashboard.html'">Voltar ao início</button>
+        </div>`;
+      document.body.appendChild(fundo);
+    }
+  </script>
+</body>
+</html>

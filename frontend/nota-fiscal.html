@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nota Fiscal e Tributação — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Nota Fiscal e Tributação</span></div>
+    </div>
+
+  <div class="container">
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>Origem da Mercadoria</h3>
+        <p style="color:var(--texto-suave); font-size:0.9rem;">Primeiro dígito do CST/CSOSN, definido por produto na tela de Estoque.</p>
+        <table>
+          <tbody>
+            <tr><td><strong>0</strong></td><td>Nacional</td></tr>
+            <tr><td><strong>1</strong></td><td>Estrangeira (Importação Direta)</td></tr>
+            <tr><td><strong>2</strong></td><td>Estrangeira (Mercado Interno)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>Validador de CEST</h3>
+        <p style="color:var(--texto-suave); font-size:0.9rem;">O CEST deve ter exatamente 7 dígitos numéricos e está vinculado ao NCM do produto para regimes de ICMS-ST.</p>
+        <div class="form-linha">
+          <label>Digite o CEST</label>
+          <input id="input-cest" maxlength="7" placeholder="0000000">
+        </div>
+        <button class="btn btn-primario" onclick="validarCest()">Validar</button>
+        <p id="resultado-cest" style="margin-top:0.8rem; font-weight:600;"></p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <h3>Onde configurar</h3>
+      <p style="color:var(--texto-suave);">Os campos de NCM, CEST e Origem são preenchidos individualmente em cada produto, na tela <a href="estoque.html" style="color:var(--verde-700); font-weight:600;">Registro de Estoque</a> → editar produto → seção Fiscal.</p>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+    function validarCest() {
+      const valor = document.getElementById('input-cest').value.trim();
+      const ok = /^\d{7}$/.test(valor);
+      const el = document.getElementById('resultado-cest');
+      el.textContent = ok ? '✅ CEST válido (7 dígitos numéricos)' : '❌ Inválido — deve conter exatamente 7 dígitos numéricos';
+      el.style.color = ok ? 'var(--verde-700)' : 'var(--vermelho)';
+    }
+  </script>
+</body>
+</html>

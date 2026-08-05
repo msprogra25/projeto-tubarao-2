@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Histórico de Vendas — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Histórico de Vendas</span></div>
+    </div>
+
+  <div class="container">
+    <div id="box-google-drive" class="card" style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:0.88rem;">🔗 Google Drive: <span id="status-drive">verificando...</span></span>
+      <button class="btn btn-secundario" id="btn-drive" style="padding:0.5rem 0.9rem; font-size:0.82rem;" onclick="conectarDrive()">Conectar</button>
+    </div>
+    <input id="busca" type="text" placeholder="Buscar por produto..." style="width:100%; margin-bottom:1rem;">
+
+    <h2 style="font-size:1.1rem;">💰 Carteira — últimos 30 dias</h2>
+    <div class="card" id="card-carteira" style="margin-bottom:1.5rem;"><p class="vazio">Carregando...</p></div>
+
+    <div class="card"><div id="lista"><p class="vazio">Carregando...</p></div></div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+    async function carregarStatusDrive() {
+      try {
+        const status = await api('/drive/status');
+        const span = document.getElementById('status-drive');
+        const btn = document.getElementById('btn-drive');
+        if (!status.configurado) {
+          span.textContent = 'não configurado pelo administrador';
+          btn.style.display = 'none';
+        } else if (status.conectado) {
+          span.textContent = 'conectado ✅';
+          btn.textContent = 'Desconectar';
+          btn.onclick = desconectarDrive;
+        } else {
+          span.textContent = 'não conectado';
+          btn.textContent = 'Conectar';
+          btn.onclick = conectarDrive;
+        }
+      } catch (e) { /* silencioso */ }
+    }
+    function conectarDrive() { window.open('/api/drive/conectar', '_blank'); }
+    async function desconectarDrive() {
+      if (!confirm('Desconectar a conta do Google Drive?')) return;
+      await api('/drive/desconectar', { method: 'DELETE' });
+      carregarStatusDrive();
+    }
+    async function enviarVendaAoDrive(id) {
+      try {
+        mostrarToast('Enviando ao Google Drive...');
+        const resultado = await api(`/drive/enviar-venda/${id}`, { method: 'POST' });
+        mostrarToast('Enviado! Abrindo no Drive...');
+        window.open(resultado.drive_url, '_blank');
+      } catch (err) { mostrarToast(err.message, 'erro'); }
+    }
+
+    async function carregar() {
+      const busca = document.getElementById('busca').value;
+      const params = busca ? `?busca=${encodeURIComponent(busca)}` : '';
+      const vendas = await api(`/vendas${params}`);
+      const box = document.getElementById('lista');
+      if (!vendas.length) { box.innerHTML = '<p class="vazio">Nenhuma venda encontrada.</p>'; return; }
+      box.innerHTML = `
+        <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Data</th><th>Produtos</th><th>Itens</th><th>Total</th><th></th></tr></thead>
+          <tbody>
+            ${vendas.map(v => `
+              <tr>
+                <td>${formatarDataHora(v.criado_em)}</td>
+                <td>${v.produtos || '-'}</td>
+                <td>${v.quantidade_itens || 0}</td>
+                <td>${formatarMoeda(v.total)}</td>
+                <td>${v.pdf_path ? `<a href="${v.pdf_path.replace('/storage', '/api/storage')}" target="_blank" class="btn btn-secundario" style="padding:0.4rem 0.8rem;">PDF</a> <button class="btn-icone" style="width:32px;height:32px;" onclick="enviarVendaAoDrive(${v.id})" title="Enviar ao Google Drive">☁️</button>` : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>`;
+    }
+    async function carregarCarteira() {
+      const dados = await api('/vendas/carteira');
+      const box = document.getElementById('card-carteira');
+      if (!dados.dias.length) {
+        box.innerHTML = '<p class="vazio">Nenhuma venda nos últimos 30 dias.</p>';
+        return;
+      }
+      box.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; padding-bottom:1rem; border-bottom:2px solid var(--borda);">
+          <strong style="font-size:1.05rem;">Total em 30 dias</strong>
+          <strong style="font-size:1.3rem; color:var(--verde-700);">${formatarMoeda(dados.total_geral)}</strong>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:0.4rem; max-height:260px; overflow-y:auto;">
+          ${dados.dias.map(d => `
+            <div style="display:flex; justify-content:space-between; padding:0.5rem 0.2rem; border-bottom:1px solid var(--borda); font-size:0.88rem;">
+              <span>${new Date(d.dia + 'T00:00:00').toLocaleDateString('pt-BR')} <span style="color:var(--texto-suave); font-size:0.78rem;">(${d.quantidade_vendas} venda${d.quantidade_vendas > 1 ? 's' : ''})</span></span>
+              <strong>${formatarMoeda(d.total)}</strong>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+
+    document.getElementById('busca').addEventListener('input', () => { clearTimeout(window._t); window._t = setTimeout(carregar, 300); });
+    carregar().catch(e => mostrarToast(e.message, 'erro'));
+    carregarCarteira().catch(e => mostrarToast(e.message, 'erro'));
+    carregarStatusDrive();
+  </script>
+</body>
+</html>

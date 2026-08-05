@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fornecedores — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .busca-linha { display: flex; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .busca-linha input { flex: 1; min-width: 200px; }
+  .fab { position: fixed; bottom: 1.6rem; right: 1.6rem; width: 58px; height: 58px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--verde-600), var(--azul-600)); color: #fff; font-size: 1.6rem;
+    display: flex; align-items: center; justify-content: center; box-shadow: var(--sombra); border: none; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Fornecedores</span></div>
+    </div>
+
+  <div class="container">
+    <div class="busca-linha">
+      <input id="busca" type="text" placeholder="Buscar por nome ou CNPJ...">
+      <label class="btn btn-secundario" style="cursor:pointer;">
+        Importar XML (NF-e)
+        <input type="file" accept=".xml" id="input-xml" style="display:none;">
+      </label>
+    </div>
+
+    <div class="card">
+      <div id="lista-fornecedores"><p class="vazio">Carregando...</p></div>
+    </div>
+  </div>
+
+  <button class="fab" onclick="abrirFormulario()" title="Novo fornecedor">+</button>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+    let fornecedorEditando = null;
+
+    async function carregarFornecedores() {
+      const busca = document.getElementById('busca').value;
+      const params = busca ? `?busca=${encodeURIComponent(busca)}` : '';
+      const fornecedores = await api(`/fornecedores${params}`);
+      const box = document.getElementById('lista-fornecedores');
+      if (!fornecedores.length) { box.innerHTML = '<p class="vazio">Nenhum fornecedor cadastrado.</p>'; return; }
+      box.innerHTML = `
+        <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Nome</th><th>CNPJ</th><th>Telefone</th><th>E-mail</th><th></th></tr></thead>
+          <tbody>
+            ${fornecedores.map(f => `
+              <tr>
+                <td>${f.nome}</td><td>${f.cnpj}</td><td>${f.telefone || '-'}</td><td>${f.email || '-'}</td>
+                <td>
+                  <button class="btn-icone" onclick='abrirFormulario(${JSON.stringify(f)})' title="Editar">✏️</button>
+                  <button class="btn-icone" onclick="baixarPdfProdutosFornecedor(${f.id})" title="Baixar PDF dos produtos">📄</button>
+                  <button class="btn-icone" onclick="excluirFornecedor(${f.id})" title="Excluir">🗑️</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>`;
+    }
+
+    async function baixarPdfProdutosFornecedor(id) {
+      try {
+        mostrarToast('Gerando PDF dos produtos...');
+        const resultado = await api(`/fornecedores/${id}/pdf`);
+        window.open(resultado.pdf_url, '_blank');
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    }
+
+    document.getElementById('busca').addEventListener('input', () => { clearTimeout(window._t); window._t = setTimeout(carregarFornecedores, 300); });
+
+    async function excluirFornecedor(id) {
+      if (!confirm('Excluir este fornecedor?')) return;
+      await api(`/fornecedores/${id}`, { method: 'DELETE' });
+      mostrarToast('Fornecedor excluído');
+      carregarFornecedores();
+    }
+
+    function abrirFormulario(fornecedor = null) {
+      fornecedorEditando = fornecedor;
+      const fundo = document.createElement('div');
+      fundo.className = 'modal-fundo'; fundo.id = 'modal-fornecedor';
+      fundo.innerHTML = `
+        <div class="modal">
+          <h2>${fornecedor ? 'Editar fornecedor' : 'Novo fornecedor'}</h2>
+          <form id="form-fornecedor">
+            <div class="form-linha"><label>Nome</label><input name="nome" required value="${fornecedor?.nome || ''}"></div>
+            <div class="form-linha"><label>CNPJ</label><input name="cnpj" required value="${fornecedor?.cnpj || ''}"></div>
+            <div class="form-linha"><label>Telefone</label><input name="telefone" value="${fornecedor?.telefone || ''}"></div>
+            <div class="form-linha"><label>E-mail</label><input type="email" name="email" value="${fornecedor?.email || ''}"></div>
+            <div class="form-linha"><label>Endereço</label><input name="endereco" value="${fornecedor?.endereco || ''}"></div>
+            <div style="display:flex; gap:0.6rem; margin-top:1rem;">
+              <button type="button" class="btn btn-secundario" style="flex:1;" onclick="document.getElementById('modal-fornecedor').remove()">Cancelar</button>
+              <button type="submit" class="btn btn-primario" style="flex:1;">Salvar</button>
+            </div>
+          </form>
+        </div>`;
+      document.body.appendChild(fundo);
+      document.getElementById('form-fornecedor').addEventListener('submit', salvarFornecedor);
+    }
+
+    async function salvarFornecedor(e) {
+      e.preventDefault();
+      const dados = Object.fromEntries(new FormData(e.target));
+      try {
+        if (fornecedorEditando) {
+          await api(`/fornecedores/${fornecedorEditando.id}`, { method: 'PUT', body: dados });
+        } else {
+          await api('/fornecedores', { method: 'POST', body: dados });
+        }
+        mostrarToast('Fornecedor salvo');
+        document.getElementById('modal-fornecedor').remove();
+        carregarFornecedores();
+      } catch (err) { mostrarToast(err.message, 'erro'); }
+    }
+
+    document.getElementById('input-xml').addEventListener('change', async (e) => {
+      const arquivo = e.target.files[0];
+      if (!arquivo) return;
+      const fd = new FormData();
+      fd.append('arquivo', arquivo);
+      try {
+        mostrarToast('Processando XML...');
+        const resultado = await api('/fornecedores/importar-xml', { method: 'POST', body: fd, isFormData: true });
+        const atualizados = resultado.itens.filter(i => i.status === 'estoque_atualizado').length;
+        const naoCadastrados = resultado.itens.filter(i => i.status === 'produto_nao_cadastrado').length;
+        mostrarToast(`Estoque atualizado: ${atualizados} item(ns). Não cadastrados: ${naoCadastrados}.`);
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    carregarFornecedores().catch(e => mostrarToast(e.message, 'erro'));
+  </script>
+</body>
+</html>

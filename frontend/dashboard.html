@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Início — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/vendor/chart.umd.js"></script>
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()" title="Menu">☰</button>
+    <div class="marca">
+      <img id="logo-empresa" src="" alt="" style="display:none;">
+      <span id="nome-empresa">Minha Empresa</span>
+    </div>
+    <div class="acoes">
+      <button class="btn-icone" onclick="location.href='pdv.html'" title="Efetuar Venda">🛒</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>Desempenho financeiro</h2>
+    <div class="card">
+      <canvas id="grafico-financeiro" height="90"></canvas>
+    </div>
+
+    <h2 style="margin-top:2rem;">Vendas por produto</h2>
+    <div class="card">
+      <canvas id="grafico-pizza" height="220"></canvas>
+    </div>
+
+    <h2 style="margin-top:2rem;">Histórico de vendas recentes</h2>
+    <div class="card" id="lista-vendas">
+      <p class="vazio">Carregando...</p>
+    </div>
+
+    <h2 style="margin-top:2rem;">📍 Localização no estoque</h2>
+    <div class="card" id="lista-localizacoes">
+      <p class="vazio">Carregando...</p>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+
+    async function carregarEmpresa() {
+      try {
+        const empresa = await api('/empresa');
+        document.getElementById('nome-empresa').textContent = empresa.nome;
+        if (empresa.logo_path) {
+          const img = document.getElementById('logo-empresa');
+          img.src = empresa.logo_path;
+          img.style.display = 'block';
+        }
+      } catch (e) { /* silencioso */ }
+    }
+
+    async function carregarGrafico() {
+      const resumo = await api('/vendas/dashboard/resumo');
+      const dias = [...new Set([...resumo.vendas.map(v => v.dia), ...resumo.custos.map(c => c.dia)])].sort();
+      const mapaVendas = Object.fromEntries(resumo.vendas.map(v => [v.dia, v.vendas]));
+      const mapaCustos = Object.fromEntries(resumo.custos.map(c => [c.dia, c.custos]));
+
+      new Chart(document.getElementById('grafico-financeiro'), {
+        type: 'line',
+        data: {
+          labels: dias.length ? dias : ['Sem dados ainda'],
+          datasets: [
+            {
+              label: 'Vendas',
+              data: dias.map(d => mapaVendas[d] || 0),
+              borderColor: '#d4af37',
+              backgroundColor: 'rgba(212,175,55,0.15)',
+              fill: true, tension: 0.3,
+            },
+            {
+              label: 'Custos',
+              data: dias.map(d => mapaCustos[d] || 0),
+              borderColor: '#e05c56',
+              backgroundColor: 'rgba(224,92,86,0.12)',
+              fill: true, tension: 0.3,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { position: 'bottom' } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+    }
+
+    async function carregarGraficoPizza() {
+      const dados = await api('/vendas/dashboard/por-produto');
+      const canvas = document.getElementById('grafico-pizza');
+      if (!dados.length) {
+        canvas.parentElement.innerHTML = '<p class="vazio">Sem vendas registradas ainda para detalhar por produto.</p>';
+        return;
+      }
+      const paleta = ['#5c4400', '#8a6700', '#b8860b', '#d4af37', '#e8c04d', '#f0d478', '#f5dc8a', '#faeab3'];
+      new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          labels: dados.map(d => d.nome),
+          datasets: [{
+            data: dados.map(d => d.total),
+            backgroundColor: paleta,
+            borderColor: '#262626',
+            borderWidth: 2,
+            hoverOffset: 10,
+          }],
+        },
+        options: {
+          responsive: true,
+          cutout: '62%',
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.label}: ${formatarMoeda(ctx.parsed)}`,
+              },
+            },
+          },
+        },
+      });
+    }
+
+    async function carregarHistorico() {
+      const vendas = await api('/vendas');
+      const box = document.getElementById('lista-vendas');
+      if (!vendas.length) {
+        box.innerHTML = '<p class="vazio">Nenhuma venda registrada ainda.</p>';
+        return;
+      }
+      box.innerHTML = `
+        <div style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>Data</th><th>Produtos</th><th>Total</th><th>PDF</th></tr></thead>
+          <tbody>
+            ${vendas.slice(0, 10).map(v => `
+              <tr>
+                <td>${formatarDataHora(v.criado_em)}</td>
+                <td>${v.produtos || '-'}</td>
+                <td>${formatarMoeda(v.total)}</td>
+                <td>${v.pdf_path ? `<a href="${v.pdf_path.replace('/storage', '/api/storage')}" target="_blank">Abrir PDF</a>` : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        </div>`;
+    }
+
+    async function carregarLocalizacoes() {
+      const dados = await api('/produtos/categorias/localizacoes');
+      const box = document.getElementById('lista-localizacoes');
+      if (!dados.length) {
+        box.innerHTML = '<p class="vazio">Nenhuma categoria com estante definida ainda. Cadastre em Registro de Estoque → Editar categorias.</p>';
+        return;
+      }
+      box.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:0.6rem;">
+          ${dados.map(c => `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:0.7rem 0.9rem; border-radius:var(--raio-sm); background:${c.cor || '#d4af37'}18; border-left:5px solid ${c.cor || '#d4af37'};">
+              <div>
+                <strong style="color:${c.cor || '#d4af37'};">${c.nome}</strong>
+                <div style="font-size:0.78rem; color:var(--texto-suave);">${c.quantidade_total} un. em estoque · ${c.numero_produtos} produto${c.numero_produtos != 1 ? 's' : ''}</div>
+              </div>
+              <span style="font-weight:700; color:${c.cor || '#d4af37'};">📍 Estante ${c.localizacao}</span>
+            </div>
+          `).join('')}
+        </div>`;
+    }
+
+    carregarEmpresa();
+    carregarGrafico().catch(e => mostrarToast(e.message, 'erro'));
+    carregarGraficoPizza().catch(e => mostrarToast(e.message, 'erro'));
+    carregarHistorico().catch(e => mostrarToast(e.message, 'erro'));
+    carregarLocalizacoes().catch(e => mostrarToast(e.message, 'erro'));
+  </script>
+</body>
+</html>

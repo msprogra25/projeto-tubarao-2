@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entrar — Projeto Tubarão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .login-card { width: 100%; max-width: 380px; }
+  .login-logo { text-align: center; margin-bottom: 1.6rem; }
+  .login-logo .icone {
+    width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 0.8rem;
+    background: linear-gradient(135deg, var(--verde-600), var(--azul-600));
+    display: flex; align-items: center; justify-content: center; font-size: 1.6rem;
+  }
+  .login-card button[type=submit] { width: 100%; margin-top: 0.4rem; }
+  .link-registrar { text-align: center; margin-top: 1rem; font-size: 0.88rem; color: var(--texto-suave); }
+  .link-registrar a { color: var(--verde-700); font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+  <div class="card login-card">
+    <div class="login-logo">
+      <img id="login-logo-img" style="display:none; width:64px; height:64px; border-radius:16px; margin:0 auto 0.8rem; object-fit:contain; background:var(--bg-elevado); border:1px solid var(--borda);" alt="Logo da empresa">
+      <div class="icone" id="login-logo-fallback">🛒</div>
+      <h1 style="font-size:1.3rem;" id="login-nome-empresa">Entrar no sistema</h1>
+      <p style="color:var(--texto-suave); font-size:0.9rem;">Gestão de vendas e estoque</p>
+    </div>
+
+    <form id="form-login">
+      <div class="form-linha">
+        <label for="email">E-mail</label>
+        <input id="email" type="email" required autocomplete="username">
+      </div>
+      <div class="form-linha">
+        <label for="senha">Senha</label>
+        <input id="senha" type="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primario">Confirmar</button>
+    </form>
+
+    <p class="link-registrar">Primeiro acesso? <a href="#" id="link-registrar">Criar conta</a></p>
+  </div>
+
+  <div id="modal-cadastro" class="modal-fundo" style="display:none;">
+    <div class="modal">
+      <h2>Criar conta</h2>
+      <form id="form-cadastro">
+        <div class="form-linha"><label>E-mail</label><input type="email" name="email" required></div>
+        <div class="form-linha">
+          <label>Senha</label>
+          <input type="password" name="senha" id="senha-cadastro" required minlength="8" oninput="atualizarIndicadorSenha()">
+        </div>
+        <p style="font-size:0.76rem; color:var(--texto-suave); margin:-0.6rem 0 0.4rem;">Mín. 8 caracteres, com maiúscula, minúscula, número e caractere especial.</p>
+        <div id="indicador-senha" style="display:none; margin-bottom:0.8rem; padding:0.6rem 0.8rem; background:var(--verde-100); border-radius:var(--raio-sm); font-size:0.78rem; font-family:monospace;">
+          <div>🔄 Prévia embaralhada (Atbash, só ilustrativo): <strong id="senha-embaralhada"></strong></div>
+          <div>🔢 Soma dos dígitos: <strong id="senha-soma"></strong></div>
+          <div style="color:var(--texto-suave); font-family:var(--fonte-corpo); margin-top:0.3rem;">⚠️ Isso é só uma curiosidade visual — a senha de verdade é protegida com Bcrypt, não por isso.</div>
+        </div>
+        <div class="form-linha"><label>Confirmar senha</label><input type="password" name="confirmar_senha" required minlength="8"></div>
+        <div class="form-linha"><label>CNPJ</label><input name="cnpj" placeholder="00.000.000/0000-00"></div>
+        <div class="form-linha"><label>Endereço</label><input name="endereco" placeholder="Rua, número, bairro, cidade"></div>
+        <div class="form-linha"><label>CEP</label><input name="cep" placeholder="00000-000"></div>
+        <div class="form-linha"><label>Telefone</label><input name="telefone" placeholder="(00) 00000-0000"></div>
+        <div style="display:flex; gap:0.6rem; margin-top:0.6rem;">
+          <button type="button" class="btn btn-secundario" style="flex:1;" onclick="document.getElementById('modal-cadastro').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn btn-primario" style="flex:1;">Entrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    (async function carregarLogoLogin() {
+      try {
+        const empresa = await api('/empresa');
+        if (empresa?.nome) document.getElementById('login-nome-empresa').textContent = empresa.nome;
+        if (empresa?.logo_path) {
+          document.getElementById('login-logo-img').src = empresa.logo_path;
+          document.getElementById('login-logo-img').style.display = 'block';
+          document.getElementById('login-logo-fallback').style.display = 'none';
+        }
+      } catch (e) { /* sem empresa configurada ainda, mantém o ícone padrão */ }
+    })();
+  </script>
+  <script>
+    document.getElementById('form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value;
+      const senha = document.getElementById('senha').value;
+      try {
+        const data = await api('/auth/login', { method: 'POST', body: { email, senha } });
+        localStorage.setItem('pdv_token', data.token);
+        location.href = 'dashboard.html';
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // Indicador visual/gamificado de senha (Atbash + soma de dígitos).
+    // IMPORTANTE: isso é puramente ilustrativo, mostrado enquanto o
+    // usuário digita, para dar um feedback visual divertido. A senha
+    // real é enviada como está para o backend, que a protege com
+    // Bcrypt (hash unidirecional de verdade) antes de gravar no banco.
+    // Esta transformação (Atbash) é reversível — NUNCA é usada para
+    // guardar ou comparar senhas, só para exibição.
+    // ---------------------------------------------------------------
+    function processarSenhaCustomizada(senha) {
+      let somaNumeros = 0;
+      let senhaTransformada = "";
+      for (let i = 0; i < senha.length; i++) {
+        let char = senha[i];
+        if (!isNaN(char) && char !== " " && char !== "") {
+          somaNumeros += parseInt(char);
+          senhaTransformada += char;
+        } else if (char.match(/[a-z]/i)) {
+          let codigoBase = char === char.toUpperCase() ? 65 : 97;
+          let letraInvertida = String.fromCharCode(25 - (char.charCodeAt(0) - codigoBase) + codigoBase);
+          senhaTransformada += letraInvertida;
+        } else {
+          senhaTransformada += char;
+        }
+      }
+      return { hashLogico: senhaTransformada, somaTotalNumeros: somaNumeros };
+    }
+
+    function atualizarIndicadorSenha() {
+      const senha = document.getElementById('senha-cadastro').value;
+      const box = document.getElementById('indicador-senha');
+      if (!senha) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      const resultado = processarSenhaCustomizada(senha);
+      document.getElementById('senha-embaralhada').textContent = resultado.hashLogico;
+      document.getElementById('senha-soma').textContent = resultado.somaTotalNumeros;
+    }
+
+    document.getElementById('link-registrar').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('modal-cadastro').style.display = 'flex';
+    });
+
+    document.getElementById('form-cadastro').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dados = Object.fromEntries(new FormData(e.target));
+      if (dados.senha !== dados.confirmar_senha) {
+        mostrarToast('As senhas não coincidem', 'erro');
+        return;
+      }
+      try {
+        await api('/auth/registrar', { method: 'POST', body: dados });
+        mostrarToast('Conta criada! Faça login.');
+        document.getElementById('modal-cadastro').style.display = 'none';
+        e.target.reset();
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      }
+    });
+  </script>
+</body>
+</html>

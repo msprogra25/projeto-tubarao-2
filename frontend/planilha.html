@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planilha de Vendas — Projeto Tubarão</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <button class="btn-icone" onclick="abrirMenu()">☰</button>
+    <div class="marca"><span>Planilha de Vendas</span></div>
+    </div>
+
+  <div class="container">
+    <div class="card" style="text-align:center; max-width:480px; margin:0 auto;">
+      <h2>Relatório de vendas em Excel</h2>
+      <p style="color:var(--texto-suave);">Gera uma planilha com nome dos produtos, valor unitário, somatória total e data/hora de cada venda. O arquivo fica disponível por <strong>3 dias</strong> e é excluído automaticamente depois.</p>
+      <button class="btn btn-primario" id="btn-gerar" onclick="gerarPlanilha()">Gerar planilha</button>
+      <div id="resultado" style="margin-top:1rem;"></div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/theme.js"></script>
+  <script>
+    exigirLogin();
+    async function gerarPlanilha() {
+      const btn = document.getElementById('btn-gerar');
+      btn.disabled = true; btn.textContent = 'Gerando...';
+      try {
+        const resultado = await api('/empresa/relatorios/planilha');
+        document.getElementById('resultado').innerHTML = `
+          <a class="btn btn-secundario" href="${resultado.url.replace('/storage', '/api/storage')}" target="_blank">Baixar planilha (.xlsx)</a>
+          <p style="color:var(--texto-suave); font-size:0.85rem; margin-top:0.6rem;">Disponível por ${resultado.expira_em_dias} dias.</p>`;
+      } catch (err) {
+        mostrarToast(err.message, 'erro');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Gerar planilha';
+      }
+    }
+  </script>
+</body>
+</html>
