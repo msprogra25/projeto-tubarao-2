@@ -63,6 +63,10 @@ app.use('/api/fornecedores', fornecedoresRoutes);
 app.use('/api/empresa', empresaRoutes);
 app.use('/api/drive', driveRoutes);
 
+app.get('/', (req, res) => {
+  res.status(200).json({ mensagem: 'API do PDV está online e funcionando!' });
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
 // Proxy para arquivos gerados pelo serviço Python (PDF/Excel). O frontend
