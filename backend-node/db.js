@@ -1,8 +1,16 @@
-// db.js — Conexão SQLite com WAL mode (melhora concorrência de leitura/escrita)
-const Database = require('better-sqlite3');
+// db.js — Conexão com Neon em produção, fallback para SQLite em desenvolvimento.
+const { neon } = require('@neondatabase/serverless');
 const fs = require('fs');
 const path = require('path');
 
+if (process.env.DATABASE_URL) {
+  const sql = neon(process.env.DATABASE_URL);
+  module.exports = sql;
+  return;
+}
+
+// Fallback local para desenvolvimento sem DATABASE_URL.
+const Database = require('better-sqlite3');
 const DB_PATH = path.join(__dirname, 'pdv.db');
 const SCHEMA_PATH = path.join(__dirname, '..', 'database', 'schema.sql');
 
@@ -19,18 +27,13 @@ db.pragma('synchronous = NORMAL');
 const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
 db.exec(schema);
 
-// -----------------------------------------------------------------
-// Migração leve: bancos criados antes desta versão não têm as colunas
-// novas de localização/cor da categoria. CREATE TABLE IF NOT EXISTS
-// não adiciona colunas em tabelas já existentes, então fazemos isso
-// manualmente aqui, ignorando o erro se a coluna já existir.
-// -----------------------------------------------------------------
 function adicionarColunaSeNaoExistir(tabela, coluna, definicao) {
   const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all().map(c => c.name);
   if (!colunas.includes(coluna)) {
     db.exec(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${definicao}`);
   }
 }
+
 adicionarColunaSeNaoExistir('categorias', 'localizacao', 'TEXT');
 adicionarColunaSeNaoExistir('categorias', 'cor', "TEXT DEFAULT '#0e9f6e'");
 adicionarColunaSeNaoExistir('venda_itens', 'ncm', 'TEXT');
@@ -48,27 +51,16 @@ module.exports = db;
 
 /*
  * ---------------------------------------------------------------
- * MIGRAÇÃO PARA POSTGRESQL (produção / +300 usuários simultâneos)
+ * Neon + DATABASE_URL (produção)
  * ---------------------------------------------------------------
- * SQLite é ótimo para desenvolvimento e cargas moderadas, mas para
- * alta concorrência real (centenas de conexões simultâneas de
- * escrita) o recomendado é PostgreSQL com um pool de conexões.
+ * Quando DATABASE_URL estiver definido, este módulo exporta o cliente
+ * Neon via `const sql = neon(process.env.DATABASE_URL);`.
  *
- * Troque este arquivo por algo como:
+ * Para rotas que hoje usam SQLite (`db.prepare(...).get/all/run(...)`),
+ * a migração real para Neon exige trocar para queries assíncronas em
+ * template literals, por exemplo:
  *
- *   const { Pool } = require('pg');
- *   const pool = new Pool({
- *     host: process.env.DB_HOST,
- *     user: process.env.DB_USER,
- *     password: process.env.DB_PASSWORD,
- *     database: process.env.DB_NAME,
- *     max: 50,              // conexões no pool
- *     idleTimeoutMillis: 30000,
- *   });
- *   module.exports = pool;
+ *   const produtos = await sql`SELECT * FROM produtos`;
  *
- * As rotas usam `db.prepare(sql).get/all/run(...)` (estilo
- * better-sqlite3, síncrono). Para portar ao `pg`, troque essas
- * chamadas por `await pool.query(sql, params)` (assíncrono) —
- * a lógica de negócio (cálculos fiscais, validações) não muda.
+ * Isso mantém o backend compatível com SQLite local e com Neon em produção.
  */
