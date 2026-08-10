@@ -96,10 +96,14 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ erro: err.message || 'Erro interno do servidor' });
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ API PDV rodando em http://localhost:${PORT}`);
-  console.log(`   Frontend: http://localhost:${PORT}/index.html`);
-});
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`✅ API PDV rodando em http://localhost:${PORT}`);
+    console.log(`   Frontend: http://localhost:${PORT}/index.html`);
+  });
+}
+
+module.exports = app;
 
 /*
  * ---------------------------------------------------------------
