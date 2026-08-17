@@ -1,14 +1,19 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const { autenticar } = require('../middleware/auth');
 
 const router = express.Router();
 
+const uploadBaseDir = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, '..', 'uploads');
+const produtoUploadDir = path.join(uploadBaseDir, 'produtos');
+fs.mkdirSync(produtoUploadDir, { recursive: true });
+
 const upload = multer({
   storage: multer.diskStorage({
-    destination: path.join(__dirname, '..', 'uploads', 'produtos'),
+    destination: produtoUploadDir,
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname);
       cb(null, `produto_${Date.now()}${ext}`);

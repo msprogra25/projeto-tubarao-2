@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const fs = require('fs');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
@@ -49,7 +50,9 @@ app.use('/api/', rateLimit({
 }));
 
 // Arquivos estáticos (imagens de produto, logos)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const uploadRootDir = process.env.VERCEL ? '/tmp/uploads' : path.join(__dirname, 'uploads');
+fs.mkdirSync(uploadRootDir, { recursive: true });
+app.use('/uploads', express.static(uploadRootDir));
 
 // Frontend estático (servido pelo mesmo processo em modo simples;
 // em produção recomenda-se servir via Nginx/CDN)
